@@ -1054,6 +1054,8 @@ function deleteCustomer() {
   saveAll();
   renderCustomerList(customers);
   closeModal('customerModal');
+  // Sync deletion to Google Sheets
+  syncToSheets('DELETE_CUSTOMER', { id: c.id });
   showAlert('', `✓ ${c.name} profile delete ho gaya!`, 'success');
 }
 
@@ -1350,8 +1352,13 @@ async function testConnection() {
 async function syncToSheets(type, data) {
   if (!settings.webAppUrl) return;
   try {
-    // Use GET request with encoded data to avoid CORS issues
-    const payload = encodeURIComponent(JSON.stringify({ type, data }));
+    let payload;
+    if (type === 'DELETE_CUSTOMER') {
+      // id should be at top level for DELETE
+      payload = encodeURIComponent(JSON.stringify({ type, id: data.id }));
+    } else {
+      payload = encodeURIComponent(JSON.stringify({ type, data }));
+    }
     await fetch(settings.webAppUrl + '?method=POST&payload=' + payload, {
       method: 'GET',
       mode: 'no-cors'
