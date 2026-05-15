@@ -942,7 +942,8 @@ function updateAmountLabel() {
 
 // ═══════════ RATE ═══════════
 function updateRateDisplay() {
-  document.getElementById('rateVal').textContent = settings.rate ? settings.rate.toLocaleString() : '—';
+  const el = document.getElementById('rateVal');
+  if (el) el.textContent = settings.rate ? settings.rate.toLocaleString() : '—';
 }
 function openRateModal() {
   document.getElementById('rateInput').value = settings.rate || '';
@@ -1349,10 +1350,10 @@ async function testConnection() {
 async function syncToSheets(type, data) {
   if (!settings.webAppUrl) return;
   try {
-    await fetch(settings.webAppUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ type, data }),
+    // Use GET request with encoded data to avoid CORS issues
+    const payload = encodeURIComponent(JSON.stringify({ type, data }));
+    await fetch(settings.webAppUrl + '?method=POST&payload=' + payload, {
+      method: 'GET',
       mode: 'no-cors'
     });
   } catch(e) { console.log('Sync error:', e); }
@@ -1370,7 +1371,20 @@ function getOrCreateSheet(name, headers) {
 
 function doGet(e) {
   const action = e.parameter.action;
+  
+  // Handle POST via GET (to avoid CORS)
+  if (e.parameter.payload) {
+    try {
+      const body = JSON.parse(decodeURIComponent(e.parameter.payload));
+      handleData(body);
+      return json({status:'ok'});
+    } catch(err) {
+      return json({status:'error', message: err.message});
+    }
+  }
+  
   if (action === 'ping') return json({status:'ok'});
+  
   if (action === 'getData') {
     return json({
       customers: sheetToArray('Customers'),
@@ -1378,49 +1392,84 @@ function doGet(e) {
       settings: sheetToArray('Settings')
     });
   }
+  
   return json({status:'ok'});
 }
 
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
-    if (body.type === 'TXN') {
-      const sheet = getOrCreateSheet('Transactions', ['ID','Customer','CustomerID','Date','Type','PKR','INR','Rate','CAD','Method','By','Timestamp']);
-      const d = body.data;
-      sheet.appendRow([d.id,d.customerName,d.customerId,d.date,d.type,d.pkrAmount||0,d.inrAmount||0,d.rate||'',d.cadAmount,d.method||'',d.enteredBy,d.createdAt]);
-    }
-    if (body.type === 'CUSTOMER') {
-      const sheet = getOrCreateSheet('Customers', ['ID','Name','Phone','Location','Balance','CreatedAt']);
-      const d = body.data;
-      const values = sheet.getDataRange().getValues();
-      let rowIdx = -1;
-      for (let i = 1; i < values.length; i++) {
-        if (String(values[i][0]) === String(d.id)) { rowIdx = i + 1; break; }
-      }
-      if (rowIdx > 0) {
-        sheet.getRange(rowIdx,1,1,6).setValues([[d.id,d.name,d.phone,d.location||'',d.balance||0,d.createdAt||'']]);
-      } else {
-        sheet.appendRow([d.id,d.name,d.phone,d.location||'',d.balance||0,d.createdAt||'']);
-      }
-    }
-    if (body.type === 'DELETE_CUSTOMER') {
-      const sheet = getOrCreateSheet('Customers', ['ID','Name','Phone','Location','Balance','CreatedAt']);
-      const values = sheet.getDataRange().getValues();
-      for (let i = 1; i < values.length; i++) {
-        if (String(values[i][0]) === String(body.id)) { sheet.deleteRow(i+1); break; }
-      }
-    }
-    if (body.type === 'SETTINGS') {
-      const sheet = getOrCreateSheet('Settings', ['Key','Value']);
-      const values = sheet.getDataRange().getValues();
-      let found = false;
-      for (let i = 1; i < values.length; i++) {
-        if (values[i][0] === body.key) { sheet.getRange(i+1,2).setValue(body.value); found=true; break; }
-      }
-      if (!found) sheet.appendRow([body.key, body.value]);
-    }
+    handleData(body);
     return json({status:'ok'});
-  } catch(err) { return json({status:'error',message:err.message}); }
+  } catch(err) { return json({status:'error', message:err.message}); }
+}
+
+function handleData(body) {
+  if (body.type === 'TXN') {
+    const sheet = getOrCreateSheet('Transactions', ['ID','Customer','CustomerID','Date','Type','PKR','INR','Rate','CAD','Method','By','Timestamp']);
+    const d = body.data;
+    // Check duplicate
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][0]) === String(d.id)) return;
+    }
+    sheet.appendRow([d.id,d.customerName,d.customerId,d.date,d.type,d.pkrAmount||0,d.inrAmount||0,d.rate||'',d.cadAmount,d.method||'',d.enteredBy,d.createdAt]);
+    // Update customer balance in sheet
+    updateCustomerBalance(d.customerId);
+  }
+  if (body.type === 'CUSTOMER') {
+    const sheet = getOrCreateSheet('Customers', ['ID','Name','Phone','Location','Balance','CreatedAt']);
+    const d = body.data;
+    const values = sheet.getDataRange().getValues();
+    let rowIdx = -1;
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][0]) === String(d.id)) { rowIdx = i + 1; break; }
+    }
+    if (rowIdx > 0) {
+      sheet.getRange(rowIdx,1,1,6).setValues([[d.id,d.name,d.phone,d.location||'',d.balance||0,d.createdAt||'']]);
+    } else {
+      sheet.appendRow([d.id,d.name,d.phone,d.location||'',d.balance||0,d.createdAt||'']);
+    }
+  }
+  if (body.type === 'DELETE_CUSTOMER') {
+    const sheet = getOrCreateSheet('Customers', ['ID','Name','Phone','Location','Balance','CreatedAt']);
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][0]) === String(body.id)) { sheet.deleteRow(i+1); break; }
+    }
+  }
+  if (body.type === 'SETTINGS') {
+    const sheet = getOrCreateSheet('Settings', ['Key','Value']);
+    const values = sheet.getDataRange().getValues();
+    let found = false;
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][0] === body.key) { sheet.getRange(i+1,2).setValue(body.value); found=true; break; }
+    }
+    if (!found) sheet.appendRow([body.key, body.value]);
+  }
+}
+
+function updateCustomerBalance(customerId) {
+  const txnSheet = SS.getSheetByName('Transactions');
+  const custSheet = SS.getSheetByName('Customers');
+  if (!txnSheet || !custSheet) return;
+  const txns = txnSheet.getDataRange().getValues();
+  const custs = custSheet.getDataRange().getValues();
+  let balance = 0;
+  for (let i = 1; i < txns.length; i++) {
+    if (String(txns[i][2]) === String(customerId)) {
+      const type = String(txns[i][4]).toUpperCase();
+      const cad = parseFloat(txns[i][8]) || 0;
+      if (type === 'ORDER') balance += cad;
+      else if (type === 'PAYMENT') balance -= cad;
+    }
+  }
+  for (let i = 1; i < custs.length; i++) {
+    if (String(custs[i][0]) === String(customerId)) {
+      custSheet.getRange(i+1, 5).setValue(Math.round(balance * 100) / 100);
+      break;
+    }
+  }
 }
 
 function sheetToArray(name) {
