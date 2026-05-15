@@ -1360,56 +1360,87 @@ async function syncToSheets(type, data) {
 
 // ═══════════ APPS SCRIPT CODE ═══════════
 function setupAppsScriptCode() {
-  const code = `// CAD Transfer Pro — Google Apps Script
-// Paste this in Extensions → Apps Script → Deploy as Web App
+  const code = `const SS = SpreadsheetApp.getActiveSpreadsheet();
+
+function getOrCreateSheet(name, headers) {
+  let sheet = SS.getSheetByName(name);
+  if (!sheet) { sheet = SS.insertSheet(name); sheet.appendRow(headers); }
+  return sheet;
+}
 
 function doGet(e) {
-  if (e.parameter.action === 'ping') {
-    return ContentService.createTextOutput(JSON.stringify({status:'ok'}))
-      .setMimeType(ContentService.MimeType.JSON);
+  const action = e.parameter.action;
+  if (action === 'ping') return json({status:'ok'});
+  if (action === 'getData') {
+    return json({
+      customers: sheetToArray('Customers'),
+      transactions: sheetToArray('Transactions'),
+      settings: sheetToArray('Settings')
+    });
   }
-  return ContentService.createTextOutput('CAD Transfer Pro API');
+  return json({status:'ok'});
 }
 
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    
     if (body.type === 'TXN') {
-      const sheet = ss.getSheetByName('Transactions') || ss.insertSheet('Transactions');
-      if (sheet.getLastRow() === 0) {
-        sheet.appendRow(['ID','Customer','Date','Type','PKR','Rate','CAD','Method','By','Timestamp']);
-      }
+      const sheet = getOrCreateSheet('Transactions', ['ID','Customer','CustomerID','Date','Type','PKR','INR','Rate','CAD','Method','By','Timestamp']);
       const d = body.data;
-      sheet.appendRow([d.id, d.customerName, d.date, d.type, d.pkrAmount||'', d.rate||'', d.cadAmount, d.method||'', d.enteredBy, d.createdAt]);
+      sheet.appendRow([d.id,d.customerName,d.customerId,d.date,d.type,d.pkrAmount||0,d.inrAmount||0,d.rate||'',d.cadAmount,d.method||'',d.enteredBy,d.createdAt]);
     }
-    
     if (body.type === 'CUSTOMER') {
-      const sheet = ss.getSheetByName('Customers') || ss.insertSheet('Customers');
-      if (sheet.getLastRow() === 0) {
-        sheet.appendRow(['ID','Name','Phone','Location','Balance','Created']);
-      }
+      const sheet = getOrCreateSheet('Customers', ['ID','Name','Phone','Location','Balance','CreatedAt']);
       const d = body.data;
-      // Check if exists
-      const data = sheet.getDataRange().getValues();
+      const values = sheet.getDataRange().getValues();
       let rowIdx = -1;
-      for (let i = 1; i < data.length; i++) {
-        if (data[i][0] === d.id) { rowIdx = i + 1; break; }
+      for (let i = 1; i < values.length; i++) {
+        if (String(values[i][0]) === String(d.id)) { rowIdx = i + 1; break; }
       }
       if (rowIdx > 0) {
-        sheet.getRange(rowIdx, 1, 1, 6).setValues([[d.id, d.name, d.phone, d.location||'', d.balance||0, d.createdAt||'']]);
+        sheet.getRange(rowIdx,1,1,6).setValues([[d.id,d.name,d.phone,d.location||'',d.balance||0,d.createdAt||'']]);
       } else {
-        sheet.appendRow([d.id, d.name, d.phone, d.location||'', d.balance||0, d.createdAt||'']);
+        sheet.appendRow([d.id,d.name,d.phone,d.location||'',d.balance||0,d.createdAt||'']);
       }
     }
-    
-    return ContentService.createTextOutput(JSON.stringify({status:'ok'}))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({status:'error', message: err.message}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+    if (body.type === 'DELETE_CUSTOMER') {
+      const sheet = getOrCreateSheet('Customers', ['ID','Name','Phone','Location','Balance','CreatedAt']);
+      const values = sheet.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        if (String(values[i][0]) === String(body.id)) { sheet.deleteRow(i+1); break; }
+      }
+    }
+    if (body.type === 'SETTINGS') {
+      const sheet = getOrCreateSheet('Settings', ['Key','Value']);
+      const values = sheet.getDataRange().getValues();
+      let found = false;
+      for (let i = 1; i < values.length; i++) {
+        if (values[i][0] === body.key) { sheet.getRange(i+1,2).setValue(body.value); found=true; break; }
+      }
+      if (!found) sheet.appendRow([body.key, body.value]);
+    }
+    return json({status:'ok'});
+  } catch(err) { return json({status:'error',message:err.message}); }
+}
+
+function sheetToArray(name) {
+  try {
+    const sheet = SS.getSheetByName(name);
+    if (!sheet) return [];
+    const values = sheet.getDataRange().getValues();
+    if (values.length <= 1) return [];
+    const headers = values[0];
+    return values.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((h,i) => obj[h.toLowerCase()] = row[i]);
+      return obj;
+    });
+  } catch(e) { return []; }
+}
+
+function json(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
 }`;
   document.getElementById('appsScriptCode').textContent = code;
 }
