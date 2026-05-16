@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CAD Transfer Pro</title>
+<title>MOBI FONE LIMITED</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -310,8 +310,8 @@
 <!-- ═══ LOGIN SCREEN ═══ -->
 <div id="loginScreen">
   <div class="logo-box">
-    <div class="logo-icon">💱</div>
-    <h1>CAD <span>Transfer</span> Pro</h1>
+    <div class="logo-icon">📱</div>
+    <h1>MOBI <span>FONE</span> LIMITED</h1>
     <p>Money Transfer Management System</p>
   </div>
   <div class="login-card">
@@ -342,8 +342,8 @@
   <!-- Top Bar -->
   <div class="topbar">
     <div class="topbar-left">
-      <div class="tb-logo">💱</div>
-      <div class="tb-title">CAD <span>Transfer</span> Pro</div>
+      <div class="tb-logo">📱</div>
+      <div class="tb-title">MOBI <span>FONE</span> LIMITED</div>
     </div>
     <div class="topbar-right">
       <div class="user-badge">
@@ -361,6 +361,7 @@
     <div class="nav-tab" onclick="showTab('payment')">💳 Payment</div>
     <div class="nav-tab" onclick="showTab('customers')">👥 Customers</div>
     <div class="nav-tab" onclick="showTab('reports')">📋 Reports</div>
+    <div class="nav-tab" onclick="showTab('recycle')">🗑 Recycle Bin</div>
     <div class="nav-tab" onclick="showTab('setup')">⚙ Setup</div>
   </div>
 
@@ -393,11 +394,11 @@
           <table>
             <thead>
               <tr>
-                <th>Date</th><th>Customer</th><th>Type</th><th>PKR</th><th>CAD</th><th>By</th>
+                <th>Date</th><th>Customer</th><th>Type</th><th>PKR/INR</th><th>CAD</th><th>By</th><th>Action</th>
               </tr>
             </thead>
             <tbody id="recentTxnBody">
-              <tr><td colspan="6"><div class="empty-state"><div class="icon">📭</div><p>Koi transaction nahi hai abhi</p></div></td></tr>
+              <tr><td colspan="7"><div class="empty-state"><div class="icon">📭</div><p>Koi transaction nahi hai abhi</p></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -532,6 +533,42 @@
 
       <div id="reportOutput">
         <div class="empty-state"><div class="icon">📋</div><p>Date range select karke report generate karein</p></div>
+      </div>
+    </div>
+
+    <!-- ── RECYCLE BIN ── -->
+    <div class="page" id="page-recycle">
+      <div class="card">
+        <div class="card-title">🗑 Recycle Bin</div>
+        <p class="text-muted" style="margin-bottom:1rem;">Deleted items — Restore ya Permanently Delete karo</p>
+
+        <!-- Tabs inside recycle bin -->
+        <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" id="rbTabCustomers" onclick="showRbTab('customers')" style="border-color:var(--accent);color:var(--accent);">👤 Customers</button>
+          <button class="btn btn-secondary btn-sm" id="rbTabOrders" onclick="showRbTab('orders')">📦 Orders</button>
+          <button class="btn btn-danger btn-sm" onclick="emptyRecycleBin()" style="margin-left:auto;">🗑 Empty All</button>
+        </div>
+
+        <!-- Deleted Customers -->
+        <div id="rbCustomers">
+          <div id="rbCustomerList">
+            <div class="empty-state"><div class="icon">♻</div><p>Koi deleted customer nahi</p></div>
+          </div>
+        </div>
+
+        <!-- Deleted Orders -->
+        <div id="rbOrders" style="display:none;">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Deleted On</th><th>Date</th><th>Customer</th><th>Type</th><th>CAD</th><th>By</th><th>Actions</th></tr>
+              </thead>
+              <tbody id="rbOrderList">
+                <tr><td colspan="7"><div class="empty-state"><div class="icon">♻</div><p>Koi deleted order nahi</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -721,6 +758,7 @@ function saveData(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 let customers    = loadData('customers', []);
 let transactions = loadData('transactions', []);
 let settings     = loadData('settings', { rate: 204, webAppUrl: '' });
+let recycleBin   = loadData('recycleBin', []);
 let users        = loadData('users', USERS.map(u => ({...u})));
 
 function saveAll() {
@@ -728,6 +766,7 @@ function saveAll() {
   saveData('transactions', transactions);
   saveData('settings', settings);
   saveData('users', users);
+  saveData('recycleBin', recycleBin);
 }
 
 // ═══════════ CODE LOGIN ═══════════
@@ -969,6 +1008,7 @@ function showTab(id) {
   if (id === 'dashboard') renderDashboard();
   if (id === 'customers') renderCustomerList(customers);
   if (id === 'reports') populateReportCustomers();
+  if (id === 'recycle') renderRecycleBin();
 }
 
 // ═══════════ CUSTOMER MANAGEMENT ═══════════
@@ -1049,14 +1089,15 @@ function deleteCustomer() {
     }
   }
   
-  // Delete customer
+  // Soft delete — move to recycle bin
   customers.splice(parseInt(editIdx), 1);
+  recycleBin.push({ ...c, deletedType: 'CUSTOMER', deletedAt: new Date().toISOString(), deletedBy: currentUser.name });
   saveAll();
   renderCustomerList(customers);
   closeModal('customerModal');
   // Sync deletion to Google Sheets
   syncToSheets('DELETE_CUSTOMER', { id: c.id });
-  showAlert('', `✓ ${c.name} profile delete ho gaya!`, 'success');
+  showAlert('', `✓ ${c.name} Recycle Bin mein chali gayi!`, 'success');
 }
 
 function filterCustomers(q) {
@@ -1220,7 +1261,7 @@ function renderDashboard() {
   document.getElementById('st-todayPayments').textContent = todayPay.toFixed(2);
   const tbody = document.getElementById('recentTxnBody');
   const recent = transactions.slice().reverse().slice(0, 15);
-  if (!recent.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">📭</div><p>Koi transaction nahi</p></div></td></tr>`; return; }
+  if (!recent.length) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📭</div><p>Koi transaction nahi</p></div></td></tr>`; return; }
   tbody.innerHTML = recent.map(t => {
     const amountDisplay = t.pkrAmount ? t.pkrAmount.toLocaleString() + ' PKR' : t.inrAmount ? t.inrAmount.toLocaleString() + ' INR' : '—';
     return `
@@ -1231,8 +1272,140 @@ function renderDashboard() {
       <td style="color:var(--text2);">${amountDisplay}</td>
       <td style="color:${t.type==='ORDER'?'var(--red)':'var(--green)'};">${t.type==='ORDER'?'+':'-'}${t.cadAmount.toFixed(2)}</td>
       <td style="color:var(--text3);">${t.enteredBy}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteTransaction('${t.id}')" style="padding:0.2rem 0.5rem;font-size:0.65rem;">🗑</button></td>
     </tr>`;
   }).join('');
+}
+
+// ═══════════ DELETE TRANSACTION ═══════════
+function deleteTransaction(txnId) {
+  if (!confirm('Kya aap sure hain ke yeh entry delete karna chahte hain?\nYe Recycle Bin mein chali jaayegi.')) return;
+  const idx = transactions.findIndex(t => t.id === txnId);
+  if (idx === -1) return;
+  const t = transactions[idx];
+  // Move to recycle bin
+  recycleBin.push({ ...t, deletedType: 'ORDER', deletedAt: new Date().toISOString(), deletedBy: currentUser.name });
+  transactions.splice(idx, 1);
+  // Recalculate customer balance
+  const c = customers.find(c => c.id === t.customerId);
+  if (c) {
+    if (t.type === 'ORDER') c.balance = parseFloat((c.balance - t.cadAmount).toFixed(2));
+    else if (t.type === 'PAYMENT') c.balance = parseFloat((c.balance + t.cadAmount).toFixed(2));
+    syncToSheets('CUSTOMER', c);
+  }
+  saveAll();
+  renderDashboard();
+  showAlert('', `✓ Entry Recycle Bin mein chali gayi!`, 'success');
+}
+
+// ═══════════ RECYCLE BIN ═══════════
+let currentRbTab = 'customers';
+
+function showRbTab(tab) {
+  currentRbTab = tab;
+  document.getElementById('rbCustomers').style.display = tab === 'customers' ? 'block' : 'none';
+  document.getElementById('rbOrders').style.display = tab === 'orders' ? 'block' : 'none';
+  document.getElementById('rbTabCustomers').style.borderColor = tab === 'customers' ? 'var(--accent)' : 'var(--border)';
+  document.getElementById('rbTabCustomers').style.color = tab === 'customers' ? 'var(--accent)' : 'var(--text2)';
+  document.getElementById('rbTabOrders').style.borderColor = tab === 'orders' ? 'var(--accent)' : 'var(--border)';
+  document.getElementById('rbTabOrders').style.color = tab === 'orders' ? 'var(--accent)' : 'var(--text2)';
+  renderRecycleBin();
+}
+
+function renderRecycleBin() {
+  // Customers
+  const deletedCustomers = recycleBin.filter(r => r.deletedType === 'CUSTOMER');
+  const rbCustEl = document.getElementById('rbCustomerList');
+  if (!deletedCustomers.length) {
+    rbCustEl.innerHTML = `<div class="empty-state"><div class="icon">♻</div><p>Koi deleted customer nahi</p></div>`;
+  } else {
+    rbCustEl.innerHTML = deletedCustomers.map((c, i) => `
+      <div class="customer-card" style="cursor:default;">
+        <div class="customer-avatar" style="background:linear-gradient(135deg,#64748b,#475569);">${c.name.charAt(0).toUpperCase()}</div>
+        <div class="customer-info">
+          <div class="customer-name">${c.name}</div>
+          <div class="customer-meta">${c.phone} • ${c.location || 'No location'}</div>
+          <div class="customer-meta" style="color:var(--red);">🗑 Deleted: ${formatDateTime(c.deletedAt)} by ${c.deletedBy}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.4rem;">
+          <button class="btn btn-secondary btn-sm" onclick="restoreItem(${recycleBin.indexOf(c)})">↩ Restore</button>
+          <button class="btn btn-danger btn-sm" onclick="permanentDelete(${recycleBin.indexOf(c)})">🗑 Delete</button>
+        </div>
+      </div>`).join('');
+  }
+
+  // Orders
+  const deletedOrders = recycleBin.filter(r => r.deletedType === 'ORDER');
+  const rbOrdEl = document.getElementById('rbOrderList');
+  if (!deletedOrders.length) {
+    rbOrdEl.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">♻</div><p>Koi deleted order nahi</p></div></td></tr>`;
+  } else {
+    rbOrdEl.innerHTML = deletedOrders.map((t) => `
+      <tr>
+        <td style="color:var(--red);font-size:0.72rem;">${formatDateTime(t.deletedAt)}</td>
+        <td>${formatDate(t.date)}</td>
+        <td style="color:var(--text);font-family:'Syne',sans-serif;">${t.customerName}</td>
+        <td><span class="badge badge-${t.type==='ORDER'?'order':'payment'}">${t.type}</span></td>
+        <td style="color:var(--red);">${(t.cadAmount||0).toFixed(2)} CAD</td>
+        <td style="color:var(--text3);">${t.enteredBy}</td>
+        <td style="display:flex;gap:0.3rem;">
+          <button class="btn btn-secondary btn-sm" onclick="restoreItem(${recycleBin.indexOf(t)})">↩</button>
+          <button class="btn btn-danger btn-sm" onclick="permanentDelete(${recycleBin.indexOf(t)})">🗑</button>
+        </td>
+      </tr>`).join('');
+  }
+}
+
+function restoreItem(rbIdx) {
+  const item = recycleBin[rbIdx];
+  if (!item) return;
+  if (!confirm(`"${item.name || item.customerName}" ko restore karna chahte hain?`)) return;
+  if (item.deletedType === 'CUSTOMER') {
+    customers.push({ id: item.id, name: item.name, phone: item.phone, location: item.location, balance: item.balance, createdAt: item.createdAt });
+    syncToSheets('CUSTOMER', customers[customers.length-1]);
+  } else if (item.deletedType === 'ORDER') {
+    transactions.push({ id: item.id, customerId: item.customerId, customerName: item.customerName, date: item.date, type: item.type, pkrAmount: item.pkrAmount, inrAmount: item.inrAmount, rate: item.rate, cadAmount: item.cadAmount, method: item.method, enteredBy: item.enteredBy, createdAt: item.createdAt });
+    // Fix balance
+    const c = customers.find(c => c.id === item.customerId);
+    if (c) {
+      if (item.type === 'ORDER') c.balance = parseFloat((c.balance + item.cadAmount).toFixed(2));
+      else if (item.type === 'PAYMENT') c.balance = parseFloat((c.balance - item.cadAmount).toFixed(2));
+      syncToSheets('CUSTOMER', c);
+    }
+    syncToSheets('TXN', transactions[transactions.length-1]);
+  }
+  recycleBin.splice(rbIdx, 1);
+  saveAll();
+  renderRecycleBin();
+  renderDashboard();
+  showAlert('', '✓ Item restore ho gaya!', 'success');
+}
+
+function permanentDelete(rbIdx) {
+  const item = recycleBin[rbIdx];
+  if (!item) return;
+  if (!confirm(`⚠ PERMANENTLY delete karna chahte hain?\n"${item.name || item.customerName}"\n\nYeh action UNDO nahi hogi!`)) return;
+  recycleBin.splice(rbIdx, 1);
+  saveAll();
+  renderRecycleBin();
+  showAlert('', '✓ Permanently delete ho gaya!', 'success');
+}
+
+function emptyRecycleBin() {
+  if (!recycleBin.length) { alert('Recycle Bin pehle se khali hai!'); return; }
+  if (!confirm(`⚠ Recycle Bin mein ${recycleBin.length} items hain!\n\nSab PERMANENTLY delete ho jaayenge!\nYeh action UNDO nahi hogi!`)) return;
+  recycleBin.length = 0;
+  saveAll();
+  renderRecycleBin();
+  showAlert('', '✓ Recycle Bin khali ho gayi!', 'success');
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-GB') + ' ' + d.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+  } catch { return '—'; }
 }
 
 // ═══════════ REPORTS ═══════════
@@ -1256,6 +1429,7 @@ function generateReport() {
     <div class="card" id="printArea">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem;">
         <div>
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;color:var(--accent);margin-bottom:0.3rem;">MOBI FONE LIMITED</div>
           <div style="font-size:1.2rem;font-weight:800;">Report — ${custFilter || 'All Customers'}</div>
           <div style="color:var(--text3);font-size:0.8rem;font-family:'DM Mono',monospace;">${formatDate(from)} → ${formatDate(to)}</div>
         </div>
