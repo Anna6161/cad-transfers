@@ -350,6 +350,7 @@
         <div class="dot"></div>
         <span id="currentUserName">—</span>
       </div>
+      <button class="logout-btn" onclick="refreshData()" style="border-color:var(--accent3);color:var(--accent3);" id="refreshBtn">⟳ Refresh</button>
       <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
   </div>
@@ -361,6 +362,7 @@
     <div class="nav-tab" onclick="showTab('payment')">💳 Payment</div>
     <div class="nav-tab" onclick="showTab('customers')">👥 Customers</div>
     <div class="nav-tab" onclick="showTab('reports')">📋 Reports</div>
+    <div class="nav-tab" onclick="showTab('reminders')">🔔 Reminders <span id="reminderBadge" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:0.1rem 0.4rem;font-size:0.65rem;margin-left:0.3rem;">0</span></div>
     <div class="nav-tab" onclick="showTab('recycle')">🗑 Recycle Bin</div>
     <div class="nav-tab" onclick="showTab('setup')">⚙ Setup</div>
   </div>
@@ -369,6 +371,7 @@
 
     <!-- ── DASHBOARD ── -->
     <div class="page active" id="page-dashboard">
+      <div id="reminderAlerts"></div>
       <div class="stats-grid">
         <div class="stat-card green">
           <div class="stat-label">Total Customers</div>
@@ -533,6 +536,53 @@
 
       <div id="reportOutput">
         <div class="empty-state"><div class="icon">📋</div><p>Date range select karke report generate karein</p></div>
+      </div>
+    </div>
+
+    <!-- ── REMINDERS ── -->
+    <div class="page" id="page-reminders">
+      <div class="card">
+        <div class="card-title">🔔 Reminders & Alerts</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Customer Name</label>
+            <input type="text" id="remCustomer" placeholder="e.g. Ahmed Khan" onkeydown="if(event.key==='Enter') document.getElementById('remTitle').focus()" />
+          </div>
+          <div class="form-group">
+            <label>Reminder Title *</label>
+            <input type="text" id="remTitle" placeholder="e.g. Return payment" onkeydown="if(event.key==='Enter') document.getElementById('remNote').focus()" />
+          </div>
+          <div class="form-group">
+            <label>Note / Details</label>
+            <input type="text" id="remNote" placeholder="e.g. Extra payment received" onkeydown="if(event.key==='Enter') document.getElementById('remAmount').focus()" />
+          </div>
+          <div class="form-group">
+            <label>Amount (Optional)</label>
+            <input type="number" id="remAmount" placeholder="e.g. 500 CAD" onkeydown="if(event.key==='Enter') document.getElementById('remDueDate').focus()" />
+          </div>
+          <div class="form-group">
+            <label>Due Date (Optional)</label>
+            <input type="date" id="remDueDate" onkeydown="if(event.key==='Enter') saveReminder()" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="saveReminder()">🔔 Add Reminder</button>
+          <button class="btn btn-secondary" onclick="clearReminderForm()">↺ Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Active Reminders</div>
+        <div id="remindersList">
+          <div class="empty-state"><div class="icon">🔔</div><p>Koi active reminder nahi</p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Completed Reminders</div>
+        <div id="completedRemindersList">
+          <div class="empty-state"><div class="icon">✅</div><p>Koi completed reminder nahi</p></div>
+        </div>
       </div>
     </div>
 
@@ -759,6 +809,7 @@ let customers    = loadData('customers', []);
 let transactions = loadData('transactions', []);
 let settings     = loadData('settings', { rate: 204, webAppUrl: '' });
 let recycleBin   = loadData('recycleBin', []);
+let reminders    = loadData('reminders', []);
 let users        = loadData('users', USERS.map(u => ({...u})));
 
 function saveAll() {
@@ -767,6 +818,7 @@ function saveAll() {
   saveData('settings', settings);
   saveData('users', users);
   saveData('recycleBin', recycleBin);
+  saveData('reminders', reminders);
 }
 
 // ═══════════ CODE LOGIN ═══════════
@@ -823,6 +875,8 @@ async function initApp() {
   showLoadingOverlay(false);
   renderDashboard();
   renderCustomerList(customers);
+  renderReminderAlerts();
+  updateReminderBadge();
 }
 
 function showLoadingOverlay(show) {
@@ -891,9 +945,10 @@ function filterCustomerSearch() {
     return;
   }
   
+  entryDropdownIdx = -1;
   dropdown.innerHTML = filtered.map((c, i) => {
     const realIdx = customers.indexOf(c);
-    return `<div style="padding:0.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,212,170,0.1)'" onmouseout="this.style.background=''" onclick="selectCustomerEntry(${realIdx})">
+    return `<div class="dd-item" style="padding:0.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,212,170,0.1)'" onmouseout="this.style.background=''" onclick="selectCustomerEntry(${realIdx})">
       <div style="font-weight:600;font-size:0.85rem;color:var(--text);">${c.name}</div>
       <div style="font-size:0.7rem;color:var(--text3);">${c.phone}</div>
     </div>`;
@@ -910,14 +965,29 @@ function selectCustomerEntry(idx) {
   document.getElementById('entryRate').focus();
 }
 
+let entryDropdownIdx = -1;
 function handleCustomerSearchKey(e) {
-  if (e.key === 'Enter') {
-    const idx = document.getElementById('entryCustomerIdx').value;
-    if (idx !== '') {
-      document.getElementById('entryRate').focus();
+  const dropdown = document.getElementById('entryCustomerDropdown');
+  const items = dropdown.querySelectorAll('.dd-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    entryDropdownIdx = Math.min(entryDropdownIdx + 1, items.length - 1);
+    items.forEach((el, i) => el.style.background = i === entryDropdownIdx ? 'rgba(0,212,170,0.15)' : '');
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    entryDropdownIdx = Math.max(entryDropdownIdx - 1, 0);
+    items.forEach((el, i) => el.style.background = i === entryDropdownIdx ? 'rgba(0,212,170,0.15)' : '');
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (entryDropdownIdx >= 0 && items[entryDropdownIdx]) {
+      items[entryDropdownIdx].click();
+    } else {
+      const idx = document.getElementById('entryCustomerIdx').value;
+      if (idx !== '') document.getElementById('entryRate').focus();
     }
   } else if (e.key === 'Escape') {
-    document.getElementById('entryCustomerDropdown').style.display = 'none';
+    dropdown.style.display = 'none';
+    entryDropdownIdx = -1;
   }
 }
 
@@ -941,9 +1011,10 @@ function filterPayCustomerSearch() {
     return;
   }
   
+  payDropdownIdx = -1;
   dropdown.innerHTML = filtered.map((c, i) => {
     const realIdx = customers.indexOf(c);
-    return `<div style="padding:0.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,212,170,0.1)'" onmouseout="this.style.background=''" onclick="selectCustomerPayment(${realIdx})">
+    return `<div class="dd-item" style="padding:0.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,212,170,0.1)'" onmouseout="this.style.background=''" onclick="selectCustomerPayment(${realIdx})">
       <div style="font-weight:600;font-size:0.85rem;color:var(--text);">${c.name}</div>
       <div style="font-size:0.7rem;color:var(--text3);">${c.phone} • Balance: ${(c.balance||0).toFixed(2)} CAD</div>
     </div>`;
@@ -961,14 +1032,29 @@ function selectCustomerPayment(idx) {
   document.getElementById('payCAD').focus();
 }
 
+let payDropdownIdx = -1;
 function handlePayCustomerSearchKey(e) {
-  if (e.key === 'Enter') {
-    const idx = document.getElementById('payCustomerIdx').value;
-    if (idx !== '') {
-      document.getElementById('payCAD').focus();
+  const dropdown = document.getElementById('payCustomerDropdown');
+  const items = dropdown.querySelectorAll('.dd-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    payDropdownIdx = Math.min(payDropdownIdx + 1, items.length - 1);
+    items.forEach((el, i) => el.style.background = i === payDropdownIdx ? 'rgba(0,212,170,0.15)' : '');
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    payDropdownIdx = Math.max(payDropdownIdx - 1, 0);
+    items.forEach((el, i) => el.style.background = i === payDropdownIdx ? 'rgba(0,212,170,0.15)' : '');
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (payDropdownIdx >= 0 && items[payDropdownIdx]) {
+      items[payDropdownIdx].click();
+    } else {
+      const idx = document.getElementById('payCustomerIdx').value;
+      if (idx !== '') document.getElementById('payCAD').focus();
     }
   } else if (e.key === 'Escape') {
-    document.getElementById('payCustomerDropdown').style.display = 'none';
+    dropdown.style.display = 'none';
+    payDropdownIdx = -1;
   }
 }
 
@@ -1009,6 +1095,7 @@ function showTab(id) {
   if (id === 'customers') renderCustomerList(customers);
   if (id === 'reports') populateReportCustomers();
   if (id === 'recycle') renderRecycleBin();
+  if (id === 'reminders') renderReminders();
 }
 
 // ═══════════ CUSTOMER MANAGEMENT ═══════════
@@ -1262,6 +1349,7 @@ function renderDashboard() {
   const tbody = document.getElementById('recentTxnBody');
   const recent = transactions.slice().reverse().slice(0, 15);
   if (!recent.length) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📭</div><p>Koi transaction nahi</p></div></td></tr>`; return; }
+  renderReminderAlerts();
   tbody.innerHTML = recent.map(t => {
     const amountDisplay = t.pkrAmount ? t.pkrAmount.toLocaleString() + ' PKR' : t.inrAmount ? t.inrAmount.toLocaleString() + ' INR' : '—';
     return `
@@ -1286,16 +1374,27 @@ function deleteTransaction(txnId) {
   // Move to recycle bin
   recycleBin.push({ ...t, deletedType: 'ORDER', deletedAt: new Date().toISOString(), deletedBy: currentUser.name });
   transactions.splice(idx, 1);
-  // Recalculate customer balance
-  const c = customers.find(c => c.id === t.customerId);
-  if (c) {
-    if (t.type === 'ORDER') c.balance = parseFloat((c.balance - t.cadAmount).toFixed(2));
-    else if (t.type === 'PAYMENT') c.balance = parseFloat((c.balance + t.cadAmount).toFixed(2));
-    syncToSheets('CUSTOMER', c);
-  }
+  // Recalculate customer balance from scratch
+  recalcCustomerBalance(t.customerId);
   saveAll();
   renderDashboard();
-  showAlert('', `✓ Entry Recycle Bin mein chali gayi!`, 'success');
+  renderCustomerList(customers);
+  showAlert('', '✓ Entry Recycle Bin mein chali gayi!', 'success');
+}
+
+// Recalculate balance from all remaining transactions
+function recalcCustomerBalance(customerId) {
+  const c = customers.find(c => c.id === customerId);
+  if (!c) return;
+  let bal = 0;
+  transactions.forEach(t => {
+    if (t.customerId === customerId) {
+      if (t.type === 'ORDER') bal += parseFloat(t.cadAmount) || 0;
+      else if (t.type === 'PAYMENT') bal -= parseFloat(t.cadAmount) || 0;
+    }
+  });
+  c.balance = parseFloat(bal.toFixed(2));
+  syncToSheets('CUSTOMER', c);
 }
 
 // ═══════════ RECYCLE BIN ═══════════
@@ -1365,20 +1464,16 @@ function restoreItem(rbIdx) {
     syncToSheets('CUSTOMER', customers[customers.length-1]);
   } else if (item.deletedType === 'ORDER') {
     transactions.push({ id: item.id, customerId: item.customerId, customerName: item.customerName, date: item.date, type: item.type, pkrAmount: item.pkrAmount, inrAmount: item.inrAmount, rate: item.rate, cadAmount: item.cadAmount, method: item.method, enteredBy: item.enteredBy, createdAt: item.createdAt });
-    // Fix balance
-    const c = customers.find(c => c.id === item.customerId);
-    if (c) {
-      if (item.type === 'ORDER') c.balance = parseFloat((c.balance + item.cadAmount).toFixed(2));
-      else if (item.type === 'PAYMENT') c.balance = parseFloat((c.balance - item.cadAmount).toFixed(2));
-      syncToSheets('CUSTOMER', c);
-    }
+    // Recalculate from scratch
+    recalcCustomerBalance(item.customerId);
     syncToSheets('TXN', transactions[transactions.length-1]);
   }
   recycleBin.splice(rbIdx, 1);
   saveAll();
   renderRecycleBin();
   renderDashboard();
-  showAlert('', '✓ Item restore ho gaya!', 'success');
+  renderCustomerList(customers);
+  showAlert('', '✓ Item restore ho gaya! Balance update ho gaya.', 'success');
 }
 
 function permanentDelete(rbIdx) {
@@ -1707,6 +1802,161 @@ function formatDate(d) {
   return `${parseInt(day)} ${months[parseInt(m)-1]} ${y}`;
 }
 
+// ═══════════ REFRESH ═══════════
+async function refreshData() {
+  const btn = document.getElementById('refreshBtn');
+  btn.textContent = '⟳ Loading...';
+  btn.style.opacity = '0.6';
+  showLoadingOverlay(true);
+  if (settings.webAppUrl) {
+    await loadFromSheets();
+  }
+  showLoadingOverlay(false);
+  renderDashboard();
+  renderCustomerList(customers);
+  renderReminderAlerts();
+  btn.textContent = '⟳ Refresh';
+  btn.style.opacity = '1';
+  showAlert('', '✅ Data refresh ho gaya!', 'success');
+}
+
+// ═══════════ REMINDERS ═══════════
+function saveReminder() {
+  const customer = document.getElementById('remCustomer').value.trim();
+  const title    = document.getElementById('remTitle').value.trim();
+  const note     = document.getElementById('remNote').value.trim();
+  const amount   = document.getElementById('remAmount').value.trim();
+  const dueDate  = document.getElementById('remDueDate').value;
+  if (!title) { showAlert('', 'Reminder title zaroor likhein!', 'error'); return; }
+  const rem = {
+    id: 'R' + Date.now(),
+    customer, title, note, amount, dueDate,
+    createdAt: new Date().toISOString(),
+    createdBy: currentUser.name,
+    status: 'active'
+  };
+  reminders.push(rem);
+  saveAll();
+  clearReminderForm();
+  renderReminders();
+  renderReminderAlerts();
+  updateReminderBadge();
+  showAlert('', '✅ Reminder add ho gaya!', 'success');
+}
+
+function clearReminderForm() {
+  document.getElementById('remCustomer').value = '';
+  document.getElementById('remTitle').value = '';
+  document.getElementById('remNote').value = '';
+  document.getElementById('remAmount').value = '';
+  document.getElementById('remDueDate').value = '';
+}
+
+function markReminderDone(id) {
+  const r = reminders.find(r => r.id === id);
+  if (!r) return;
+  r.status = 'completed';
+  r.completedAt = new Date().toISOString();
+  saveAll();
+  renderReminders();
+  renderReminderAlerts();
+  updateReminderBadge();
+  showAlert('', '✅ Reminder complete ho gaya!', 'success');
+}
+
+function deleteReminder(id) {
+  if (!confirm('Yeh reminder delete karna chahte hain?')) return;
+  const idx = reminders.findIndex(r => r.id === id);
+  if (idx > -1) reminders.splice(idx, 1);
+  saveAll();
+  renderReminders();
+  renderReminderAlerts();
+  updateReminderBadge();
+}
+
+function updateReminderBadge() {
+  const active = reminders.filter(r => r.status === 'active').length;
+  const badge = document.getElementById('reminderBadge');
+  if (badge) {
+    badge.textContent = active;
+    badge.style.display = active > 0 ? 'inline' : 'none';
+  }
+}
+
+function renderReminders() {
+  const active = reminders.filter(r => r.status === 'active');
+  const completed = reminders.filter(r => r.status === 'completed');
+
+  const activeEl = document.getElementById('remindersList');
+  if (!active.length) {
+    activeEl.innerHTML = `<div class="empty-state"><div class="icon">🔔</div><p>Koi active reminder nahi</p></div>`;
+  } else {
+    activeEl.innerHTML = active.map(r => {
+      const isOverdue = r.dueDate && r.dueDate < new Date().toISOString().slice(0,10);
+      return `<div style="background:var(--surface2);border:1px solid ${isOverdue ? 'var(--red)' : 'var(--border)'};border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem;">
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:0.9rem;color:${isOverdue ? 'var(--red)' : 'var(--accent)'};">
+              ${isOverdue ? '⚠ OVERDUE — ' : '🔔 '}${r.title}
+            </div>
+            ${r.customer ? `<div style="font-size:0.78rem;color:var(--text2);margin-top:0.2rem;">👤 ${r.customer}</div>` : ''}
+            ${r.note ? `<div style="font-size:0.78rem;color:var(--text2);margin-top:0.2rem;">📝 ${r.note}</div>` : ''}
+            ${r.amount ? `<div style="font-size:0.78rem;color:var(--accent2);margin-top:0.2rem;">💰 ${r.amount}</div>` : ''}
+            ${r.dueDate ? `<div style="font-size:0.72rem;color:var(--text3);margin-top:0.2rem;">📅 Due: ${formatDate(r.dueDate)}</div>` : ''}
+            <div style="font-size:0.65rem;color:var(--text3);margin-top:0.3rem;">By ${r.createdBy} • ${formatDateTime(r.createdAt)}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;flex-shrink:0;">
+            <button class="btn btn-primary btn-sm" onclick="markReminderDone('${r.id}')">✅ Done</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteReminder('${r.id}')">🗑</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const compEl = document.getElementById('completedRemindersList');
+  if (!completed.length) {
+    compEl.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>Koi completed reminder nahi</p></div>`;
+  } else {
+    compEl.innerHTML = completed.slice().reverse().slice(0,10).map(r => `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:0.75rem 1rem;margin-bottom:0.5rem;opacity:0.6;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:0.82rem;font-weight:600;">✅ ${r.title}</div>
+          ${r.customer ? `<div style="font-size:0.72rem;color:var(--text3);">👤 ${r.customer}</div>` : ''}
+          <div style="font-size:0.65rem;color:var(--text3);">Done: ${formatDateTime(r.completedAt)}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="deleteReminder('${r.id}')">🗑</button>
+      </div>`).join('');
+  }
+  updateReminderBadge();
+}
+
+function renderReminderAlerts() {
+  // Show active reminder alerts on dashboard
+  const active = reminders.filter(r => r.status === 'active');
+  let alertsEl = document.getElementById('reminderAlerts');
+  if (!alertsEl) return;
+  if (!active.length) { alertsEl.innerHTML = ''; return; }
+  const overdue = active.filter(r => r.dueDate && r.dueDate < new Date().toISOString().slice(0,10));
+  const today = active.filter(r => r.dueDate === new Date().toISOString().slice(0,10));
+  const upcoming = active.filter(r => !r.dueDate || r.dueDate > new Date().toISOString().slice(0,10));
+  let html = '';
+  if (overdue.length) {
+    html += `<div style="background:rgba(244,63,94,0.1);border:1px solid rgba(244,63,94,0.3);border-radius:12px;padding:0.75rem 1rem;margin-bottom:0.75rem;">
+      <div style="font-size:0.75rem;font-weight:700;color:var(--red);margin-bottom:0.4rem;">⚠ ${overdue.length} OVERDUE REMINDER${overdue.length>1?'S':''}</div>
+      ${overdue.map(r => `<div style="font-size:0.78rem;color:var(--text2);padding:0.2rem 0;">🔔 ${r.title}${r.customer?' — '+r.customer:''}</div>`).join('')}
+    </div>`;
+  }
+  if (today.length) {
+    html += `<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:12px;padding:0.75rem 1rem;margin-bottom:0.75rem;">
+      <div style="font-size:0.75rem;font-weight:700;color:var(--accent2);margin-bottom:0.4rem;">📅 ${today.length} REMINDER${today.length>1?'S':''} DUE TODAY</div>
+      ${today.map(r => `<div style="font-size:0.78rem;color:var(--text2);padding:0.2rem 0;">🔔 ${r.title}${r.customer?' — '+r.customer:''}</div>`).join('')}
+    </div>`;
+  }
+  alertsEl.innerHTML = html;
+}
+
+// ═══════════ CLOSE MODALS ═══════════
 // Close modals on overlay click
 document.querySelectorAll('.modal-overlay').forEach(o => {
   o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
