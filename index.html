@@ -896,26 +896,13 @@ async function loadFromSheets() {
     const url = settings.webAppUrl + '?action=getData&t=' + Date.now();
     const response = await fetch(url);
     const data = await response.json();
-
-    // Get deleted IDs from recycle bin — these must NEVER come back
-    const deletedTxnIds = new Set(
-      recycleBin.filter(r => r.deletedType === 'ORDER').map(r => r.id)
-    );
-    const deletedCustIds = new Set(
-      recycleBin.filter(r => r.deletedType === 'CUSTOMER').map(r => r.id)
-    );
-
     if (data.customers && data.customers.length > 0) {
       customers = data.customers.map(r => ({
         id: String(r.id||''), name: String(r.name||''), phone: String(r.phone||''),
         location: String(r.location||''), balance: parseFloat(r.balance||0),
         createdAt: String(r.createdat||'')
-      }))
-      .filter(c => c.name && c.id)
-      // EXCLUDE deleted customers
-      .filter(c => !deletedCustIds.has(c.id));
+      })).filter(c => c.name && c.id);
     }
-
     if (data.transactions && data.transactions.length > 0) {
       transactions = data.transactions.map(r => ({
         id: String(r.id||''), customerId: String(r.customerid||''),
@@ -924,18 +911,13 @@ async function loadFromSheets() {
         inrAmount: parseFloat(r.inr||0), rate: r.rate||'',
         cadAmount: parseFloat(r.cad||0), method: String(r.method||''),
         enteredBy: String(r.by||''), createdAt: String(r.timestamp||'')
-      }))
-      .filter(t => t.id)
-      // EXCLUDE deleted transactions — they are in recycle bin
-      .filter(t => !deletedTxnIds.has(t.id));
+      })).filter(t => t.id);
     }
-
     if (data.settings) {
       data.settings.forEach(s => {
         if (String(s.key)==='rate') settings.rate = parseFloat(s.value)||settings.rate;
       });
     }
-
     saveData('customers', customers);
     saveData('transactions', transactions);
     saveData('settings', settings);
@@ -1430,25 +1412,20 @@ function deleteTransaction(txnId) {
   const domRow = document.getElementById('txn-row-' + txnId);
   if (domRow) domRow.remove();
   
-  // Move to recycle bin — save deleted ID permanently
+  // Move to recycle bin
   recycleBin.push({ ...t, deletedType: 'ORDER', deletedAt: new Date().toISOString(), deletedBy: currentUser.name });
   
   // Remove from transactions array
   transactions.splice(idx, 1);
   
-  // Save recycle bin FIRST so deleted IDs are persisted
-  saveData('recycleBin', recycleBin);
-  
   // Recalculate customer balance from scratch
   recalcCustomerBalance(t.customerId);
   
-  // Save everything
+  // Save and full re-render for accuracy
   saveAll();
-  
-  // Full re-render for accuracy
   renderDashboard();
   renderCustomerList(customers);
-  showAlert('', '✓ Entry delete ho gayi — Recycle Bin mein hai!', 'success');
+  showAlert('', '✓ Entry Recycle Bin mein chali gayi!', 'success');
 }
 
 // Recalculate balance from all remaining transactions
