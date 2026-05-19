@@ -929,32 +929,36 @@ async function loadFromSheets() {
 function filterCustomerSearch() {
   const query = document.getElementById('entryCustomerSearch').value.toLowerCase().trim();
   const dropdown = document.getElementById('entryCustomerDropdown');
+  entryDropdownIdx = -1;
   
-  if (!query) {
-    dropdown.style.display = 'none';
-    return;
-  }
+  if (!query) { dropdown.style.display = 'none'; return; }
   
   const filtered = customers.filter(c => 
-    c.name.toLowerCase().includes(query) || c.phone.includes(query)
+    c.name.toLowerCase().includes(query) || (c.phone||'').includes(query)
   );
   
   if (!filtered.length) {
-    dropdown.innerHTML = '<div style="padding:0.5rem;color:var(--text3);font-size:0.8rem;">Koi customer nahi mila</div>';
+    dropdown.innerHTML = '<div style="padding:0.75rem 1rem;color:var(--text3);font-size:0.82rem;">Koi customer nahi mila</div>';
     dropdown.style.display = 'block';
     return;
   }
   
-  entryDropdownIdx = -1;
-  dropdown.innerHTML = filtered.map((c, i) => {
+  dropdown.innerHTML = filtered.map((c) => {
     const realIdx = customers.indexOf(c);
-    return `<div class="dd-item" style="padding:0.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,212,170,0.1)'" onmouseout="this.style.background=''" onclick="selectCustomerEntry(${realIdx})">
-      <div style="font-weight:600;font-size:0.85rem;color:var(--text);">${c.name}</div>
-      <div style="font-size:0.7rem;color:var(--text3);">${c.phone}</div>
+    const bal = (c.balance||0).toFixed(2);
+    const balColor = c.balance > 0 ? 'var(--red)' : 'var(--green)';
+    return `<div class="dd-item" data-idx="${realIdx}" style="padding:0.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s;display:flex;align-items:center;justify-content:space-between;" onclick="selectCustomerEntry(${realIdx})">
+      <div>
+        <div style="font-weight:700;font-size:0.88rem;color:var(--text);">${c.name}</div>
+        <div style="font-size:0.7rem;color:var(--text3);margin-top:0.15rem;">${c.phone||''} ${c.location ? '• '+c.location : ''}</div>
+      </div>
+      <div style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${balColor};">${bal} CAD</div>
     </div>`;
   }).join('');
   
   dropdown.style.display = 'block';
+  dropdown.style.maxHeight = '220px';
+  dropdown.style.overflowY = 'auto';
 }
 
 function selectCustomerEntry(idx) {
@@ -969,17 +973,18 @@ let entryDropdownIdx = -1;
 function handleCustomerSearchKey(e) {
   const dropdown = document.getElementById('entryCustomerDropdown');
   const items = dropdown.querySelectorAll('.dd-item');
+  
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     entryDropdownIdx = Math.min(entryDropdownIdx + 1, items.length - 1);
-    items.forEach((el, i) => el.style.background = i === entryDropdownIdx ? 'rgba(0,212,170,0.15)' : '');
+    updateDropdownHighlight(items, entryDropdownIdx, dropdown);
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
     entryDropdownIdx = Math.max(entryDropdownIdx - 1, 0);
-    items.forEach((el, i) => el.style.background = i === entryDropdownIdx ? 'rgba(0,212,170,0.15)' : '');
+    updateDropdownHighlight(items, entryDropdownIdx, dropdown);
   } else if (e.key === 'Enter') {
     e.preventDefault();
-    if (entryDropdownIdx >= 0 && items[entryDropdownIdx]) {
+    if (dropdown.style.display !== 'none' && entryDropdownIdx >= 0 && items[entryDropdownIdx]) {
       items[entryDropdownIdx].click();
     } else {
       const idx = document.getElementById('entryCustomerIdx').value;
@@ -991,36 +996,54 @@ function handleCustomerSearchKey(e) {
   }
 }
 
+function updateDropdownHighlight(items, activeIdx, dropdown) {
+  items.forEach((el, i) => {
+    if (i === activeIdx) {
+      el.style.background = 'rgba(0,212,170,0.18)';
+      el.style.borderLeft = '3px solid var(--accent)';
+      // Auto scroll into view
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } else {
+      el.style.background = '';
+      el.style.borderLeft = '';
+    }
+  });
+}
+
 // ═══════════ CUSTOMER SEARCH — PAYMENT ═══════════
 function filterPayCustomerSearch() {
   const query = document.getElementById('payCustomerSearch').value.toLowerCase().trim();
   const dropdown = document.getElementById('payCustomerDropdown');
+  payDropdownIdx = -1;
   
-  if (!query) {
-    dropdown.style.display = 'none';
-    return;
-  }
+  if (!query) { dropdown.style.display = 'none'; return; }
   
   const filtered = customers.filter(c => 
-    c.name.toLowerCase().includes(query) || c.phone.includes(query)
+    c.name.toLowerCase().includes(query) || (c.phone||'').includes(query)
   );
   
   if (!filtered.length) {
-    dropdown.innerHTML = '<div style="padding:0.5rem;color:var(--text3);font-size:0.8rem;">Koi customer nahi mila</div>';
+    dropdown.innerHTML = '<div style="padding:0.75rem 1rem;color:var(--text3);font-size:0.82rem;">Koi customer nahi mila</div>';
     dropdown.style.display = 'block';
     return;
   }
   
-  payDropdownIdx = -1;
-  dropdown.innerHTML = filtered.map((c, i) => {
+  dropdown.innerHTML = filtered.map((c) => {
     const realIdx = customers.indexOf(c);
-    return `<div class="dd-item" style="padding:0.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,212,170,0.1)'" onmouseout="this.style.background=''" onclick="selectCustomerPayment(${realIdx})">
-      <div style="font-weight:600;font-size:0.85rem;color:var(--text);">${c.name}</div>
-      <div style="font-size:0.7rem;color:var(--text3);">${c.phone} • Balance: ${(c.balance||0).toFixed(2)} CAD</div>
+    const bal = (c.balance||0).toFixed(2);
+    const balColor = c.balance > 0 ? 'var(--red)' : 'var(--green)';
+    return `<div class="dd-item" data-idx="${realIdx}" style="padding:0.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s;display:flex;align-items:center;justify-content:space-between;" onclick="selectCustomerPayment(${realIdx})">
+      <div>
+        <div style="font-weight:700;font-size:0.88rem;color:var(--text);">${c.name}</div>
+        <div style="font-size:0.7rem;color:var(--text3);margin-top:0.15rem;">${c.phone||''} ${c.location ? '• '+c.location : ''}</div>
+      </div>
+      <div style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${balColor};">${bal} CAD</div>
     </div>`;
   }).join('');
   
   dropdown.style.display = 'block';
+  dropdown.style.maxHeight = '220px';
+  dropdown.style.overflowY = 'auto';
 }
 
 function selectCustomerPayment(idx) {
@@ -1036,17 +1059,18 @@ let payDropdownIdx = -1;
 function handlePayCustomerSearchKey(e) {
   const dropdown = document.getElementById('payCustomerDropdown');
   const items = dropdown.querySelectorAll('.dd-item');
+  
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     payDropdownIdx = Math.min(payDropdownIdx + 1, items.length - 1);
-    items.forEach((el, i) => el.style.background = i === payDropdownIdx ? 'rgba(0,212,170,0.15)' : '');
+    updateDropdownHighlight(items, payDropdownIdx, dropdown);
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
     payDropdownIdx = Math.max(payDropdownIdx - 1, 0);
-    items.forEach((el, i) => el.style.background = i === payDropdownIdx ? 'rgba(0,212,170,0.15)' : '');
+    updateDropdownHighlight(items, payDropdownIdx, dropdown);
   } else if (e.key === 'Enter') {
     e.preventDefault();
-    if (payDropdownIdx >= 0 && items[payDropdownIdx]) {
+    if (dropdown.style.display !== 'none' && payDropdownIdx >= 0 && items[payDropdownIdx]) {
       items[payDropdownIdx].click();
     } else {
       const idx = document.getElementById('payCustomerIdx').value;
@@ -1338,27 +1362,39 @@ function clearPayForm() {
 // ═══════════ DASHBOARD ═══════════
 function renderDashboard() {
   const today = new Date().toISOString().slice(0,10);
+  
+  // Always read fresh from transactions array — no cache
+  const liveTxns = transactions.filter(t => !t._deleted);
   const totalBal = customers.reduce((s, c) => s + (c.balance || 0), 0);
-  const todayTxns = transactions.filter(t => t.date === today);
+  const todayTxns = liveTxns.filter(t => t.date === today);
   const todayOrders = todayTxns.filter(t => t.type === 'ORDER').length;
-  const todayPay = todayTxns.filter(t => t.type === 'PAYMENT').reduce((s,t) => s + t.cadAmount, 0);
+  const todayPay = todayTxns.filter(t => t.type === 'PAYMENT').reduce((s,t) => s + (parseFloat(t.cadAmount)||0), 0);
+  
   document.getElementById('st-customers').textContent = customers.length;
   document.getElementById('st-balance').textContent = totalBal.toFixed(2);
   document.getElementById('st-todayOrders').textContent = todayOrders;
   document.getElementById('st-todayPayments').textContent = todayPay.toFixed(2);
-  const tbody = document.getElementById('recentTxnBody');
-  const recent = transactions.slice().reverse().slice(0, 15);
-  if (!recent.length) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📭</div><p>Koi transaction nahi</p></div></td></tr>`; return; }
+  
   renderReminderAlerts();
+  
+  const tbody = document.getElementById('recentTxnBody');
+  // Fresh slice from live transactions
+  const recent = liveTxns.slice().reverse().slice(0, 15);
+  
+  if (!recent.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📭</div><p>Koi transaction nahi</p></div></td></tr>`;
+    return;
+  }
+  
   tbody.innerHTML = recent.map(t => {
     const amountDisplay = t.pkrAmount ? t.pkrAmount.toLocaleString() + ' PKR' : t.inrAmount ? t.inrAmount.toLocaleString() + ' INR' : '—';
     return `
-    <tr>
+    <tr id="txn-row-${t.id}">
       <td>${formatDate(t.date)}</td>
       <td style="color:var(--text);font-family:'Syne',sans-serif;font-size:0.82rem;">${t.customerName}</td>
       <td><span class="badge badge-${t.type==='ORDER'?'order':'payment'}">${t.type}</span></td>
       <td style="color:var(--text2);">${amountDisplay}</td>
-      <td style="color:${t.type==='ORDER'?'var(--red)':'var(--green)'};">${t.type==='ORDER'?'+':'-'}${t.cadAmount.toFixed(2)}</td>
+      <td style="color:${t.type==='ORDER'?'var(--red)':'var(--green)'};">${t.type==='ORDER'?'+':'-'}${(parseFloat(t.cadAmount)||0).toFixed(2)}</td>
       <td style="color:var(--text3);">${t.enteredBy}</td>
       <td><button class="btn btn-danger btn-sm" onclick="deleteTransaction('${t.id}')" style="padding:0.2rem 0.5rem;font-size:0.65rem;">🗑</button></td>
     </tr>`;
@@ -1371,11 +1407,21 @@ function deleteTransaction(txnId) {
   const idx = transactions.findIndex(t => t.id === txnId);
   if (idx === -1) return;
   const t = transactions[idx];
+  
+  // INSTANT DOM removal — remove row immediately without waiting
+  const domRow = document.getElementById('txn-row-' + txnId);
+  if (domRow) domRow.remove();
+  
   // Move to recycle bin
   recycleBin.push({ ...t, deletedType: 'ORDER', deletedAt: new Date().toISOString(), deletedBy: currentUser.name });
+  
+  // Remove from transactions array
   transactions.splice(idx, 1);
+  
   // Recalculate customer balance from scratch
   recalcCustomerBalance(t.customerId);
+  
+  // Save and full re-render for accuracy
   saveAll();
   renderDashboard();
   renderCustomerList(customers);
@@ -1957,6 +2003,23 @@ function renderReminderAlerts() {
 }
 
 // ═══════════ CLOSE MODALS ═══════════
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(e) {
+  const entrySearch = document.getElementById('entryCustomerSearch');
+  const entryDd = document.getElementById('entryCustomerDropdown');
+  const paySearch = document.getElementById('payCustomerSearch');
+  const payDd = document.getElementById('payCustomerDropdown');
+  
+  if (entryDd && entrySearch && !entrySearch.contains(e.target) && !entryDd.contains(e.target)) {
+    entryDd.style.display = 'none';
+    entryDropdownIdx = -1;
+  }
+  if (payDd && paySearch && !paySearch.contains(e.target) && !payDd.contains(e.target)) {
+    payDd.style.display = 'none';
+    payDropdownIdx = -1;
+  }
+});
+
 // Close modals on overlay click
 document.querySelectorAll('.modal-overlay').forEach(o => {
   o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
